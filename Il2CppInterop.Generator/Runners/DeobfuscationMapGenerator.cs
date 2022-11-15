@@ -76,14 +76,19 @@ internal class DeobfuscationMapGeneratorRunner : IRunner
             Pass11ComputeTypeSpecifics.DoPass(rewriteContext);
         }
 
+        using (new TimingCookie("Generating unboxed struct variants"))
+        {
+            Pass12CreateUnboxedStructTypedefs.DoPass(rewriteContext);
+        }
+
         using (new TimingCookie("Filling typedefs"))
         {
-            Pass12FillTypedefs.DoPass(rewriteContext);
+            Pass13FillTypedefs.DoPass(rewriteContext);
         }
 
         using (new TimingCookie("Filling generic constraints"))
         {
-            Pass13FillGenericConstraints.DoPass(rewriteContext);
+            Pass14FillGenericConstraints.DoPass(rewriteContext);
         }
 
         using (new TimingCookie("Creating members"))

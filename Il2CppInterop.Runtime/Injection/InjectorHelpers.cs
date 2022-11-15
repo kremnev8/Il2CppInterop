@@ -302,6 +302,7 @@ namespace Il2CppInterop.Runtime.Injection
                 return (Il2CppClass*)classPointer;
             }
 
+            while (ClassFromIl2CppTypeOriginal == null) Thread.Sleep(1);
             return ClassFromIl2CppTypeOriginal(type, throwOnError);
         }
         private static d_ClassFromIl2CppType ClassFromIl2CppTypeDetour = new(hkClassFromIl2CppType);

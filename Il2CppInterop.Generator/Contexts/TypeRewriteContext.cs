@@ -22,6 +22,7 @@ public class TypeRewriteContext
     private readonly Dictionary<MethodDefinition, MethodRewriteContext> myMethodContexts = new();
     private readonly Dictionary<string, MethodRewriteContext> myMethodContextsByName = new();
     public readonly TypeDefinition NewType;
+    public TypeDefinition NewUnboxedType;
 
     public readonly bool OriginalNameWasObfuscated;
     public readonly TypeDefinition OriginalType;

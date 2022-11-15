@@ -3,7 +3,7 @@ using Mono.Cecil;
 
 namespace Il2CppInterop.Generator.Passes;
 
-public static class Pass13FillGenericConstraints
+public static class Pass14FillGenericConstraints
 {
     public static void DoPass(RewriteGlobalContext context)
     {
