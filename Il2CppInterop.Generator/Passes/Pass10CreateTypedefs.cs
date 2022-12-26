@@ -13,8 +13,10 @@ public static class Pass10CreateTypedefs
     {
         foreach (var assemblyContext in context.Assemblies)
             foreach (var type in assemblyContext.OriginalAssembly.MainModule.Types)
-                if (type.Namespace != "Cpp2ILInjected" && type.Name != "<Module>")
+                if (!IsCpp2ILInjectedType(type) && type.Name != "<Module>")
                     ProcessType(type, assemblyContext, null);
+
+        static bool IsCpp2ILInjectedType(TypeDefinition type) => type.Namespace?.StartsWith("Cpp2ILInjected", StringComparison.Ordinal) ?? false;
     }
 
     private static void ProcessType(TypeDefinition type, AssemblyRewriteContext assemblyContext,
@@ -23,7 +25,7 @@ public static class Pass10CreateTypedefs
         var convertedTypeName = GetConvertedTypeName(assemblyContext.GlobalContext, type, parentType);
         var newType =
             new TypeDefinition(
-                convertedTypeName.Namespace ?? type.Namespace.UnSystemify(assemblyContext.GlobalContext.Options),
+                convertedTypeName.Namespace ?? GetNamespace(type, assemblyContext),
                 convertedTypeName.Name, AdjustAttributes(type.Attributes));
         newType.IsSequentialLayout = false;
 
@@ -44,6 +46,14 @@ public static class Pass10CreateTypedefs
             ProcessType(typeNestedType, assemblyContext, newType);
 
         assemblyContext.RegisterTypeRewrite(new TypeRewriteContext(assemblyContext, type, newType));
+
+        static string GetNamespace(TypeDefinition type, AssemblyRewriteContext assemblyContext)
+        {
+            if (type.Name is "<Module>" || type.DeclaringType is not null)
+                return type.Namespace;
+            else
+                return type.Namespace.UnSystemify(assemblyContext.GlobalContext.Options);
+        }
     }
 
     internal static (string? Namespace, string Name) GetConvertedTypeName(
