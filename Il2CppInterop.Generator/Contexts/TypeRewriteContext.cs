@@ -1,5 +1,4 @@
-using System;
-using System.Collections.Generic;
+using System.Collections;
 using Il2CppInterop.Generator.Utils;
 using Mono.Cecil;
 
@@ -16,13 +15,23 @@ public class TypeRewriteContext
         NonBlittableStruct
     }
 
+    sealed class ArrayComparer : EqualityComparer<TypeReference[]>
+    {
+        public override bool Equals(TypeReference[] x, TypeReference[] y)
+            => StructuralComparisons.StructuralEqualityComparer.Equals(x, y);
+
+        public override int GetHashCode(TypeReference[] x)
+            => StructuralComparisons.StructuralEqualityComparer.GetHashCode(x);
+    }
+
     public readonly AssemblyRewriteContext AssemblyContext;
 
     private readonly Dictionary<FieldDefinition, FieldRewriteContext> myFieldContexts = new();
     private readonly Dictionary<MethodDefinition, MethodRewriteContext> myMethodContexts = new();
     private readonly Dictionary<string, MethodRewriteContext> myMethodContextsByName = new();
     public readonly TypeDefinition NewType;
-    public TypeDefinition NewUnboxedType;
+
+    public Dictionary<TypeReference[], TypeDefinition> newUnboxedTypes = new Dictionary<TypeReference[], TypeDefinition>(new ArrayComparer());
 
     public readonly bool OriginalNameWasObfuscated;
     public readonly TypeDefinition OriginalType;
