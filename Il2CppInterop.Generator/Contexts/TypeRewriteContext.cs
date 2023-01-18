@@ -15,13 +15,42 @@ public class TypeRewriteContext
         NonBlittableStruct
     }
 
-    sealed class ArrayComparer : EqualityComparer<TypeReference[]>
+    sealed class TypeArrayComparer : EqualityComparer<TypeReference[]>
     {
-        public override bool Equals(TypeReference[] x, TypeReference[] y)
-            => StructuralComparisons.StructuralEqualityComparer.Equals(x, y);
+        private TypeComparer _typeComparer = new TypeComparer();
 
-        public override int GetHashCode(TypeReference[] x)
-            => StructuralComparisons.StructuralEqualityComparer.GetHashCode(x);
+        public override bool Equals(TypeReference[] x, TypeReference[] y)
+        {
+            if (x == null)
+                return y == null;
+            if (y == null)
+                return false;
+
+            return (x as IStructuralEquatable).Equals(y, _typeComparer);
+        }
+
+        public override int GetHashCode(TypeReference[] obj)
+        {
+            return (obj as IStructuralEquatable).GetHashCode(_typeComparer);
+        }
+    }
+
+    sealed class TypeComparer : EqualityComparer<TypeReference>
+    {
+        public override bool Equals(TypeReference x, TypeReference y)
+        {
+            if (x == null)
+                return y == null;
+            if (y == null)
+                return false;
+
+            return x.FullName.Equals(y.FullName);
+        }
+
+        public override int GetHashCode(TypeReference obj)
+        {
+            return obj.FullName.GetHashCode();
+        }
     }
 
     public readonly AssemblyRewriteContext AssemblyContext;
@@ -31,7 +60,7 @@ public class TypeRewriteContext
     private readonly Dictionary<string, MethodRewriteContext> myMethodContextsByName = new();
     public readonly TypeDefinition NewType;
 
-    public Dictionary<TypeReference[], TypeDefinition> newUnboxedTypes = new Dictionary<TypeReference[], TypeDefinition>(new ArrayComparer());
+    public Dictionary<TypeReference[], TypeDefinition> newUnboxedTypes = new Dictionary<TypeReference[], TypeDefinition>(new TypeArrayComparer());
 
     public readonly bool OriginalNameWasObfuscated;
     public readonly TypeDefinition OriginalType;
