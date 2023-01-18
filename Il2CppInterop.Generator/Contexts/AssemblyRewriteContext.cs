@@ -1,6 +1,9 @@
 using System.Collections.Generic;
+using Il2CppInterop.Common;
 using Il2CppInterop.Generator.Extensions;
+using Il2CppInterop.Generator.Passes;
 using Il2CppInterop.Generator.Utils;
+using Microsoft.Extensions.Logging;
 using Mono.Cecil;
 
 namespace Il2CppInterop.Generator.Contexts;
@@ -63,7 +66,7 @@ public class AssemblyRewriteContext
         return newType.GetMethodByOldMethod(methodRef.Resolve()).NewMethod;
     }
 
-    public TypeReference RewriteTypeRef(TypeReference? typeRef)
+    public TypeReference RewriteTypeRef(TypeReference? typeRef, bool isPointer = false)
     {
         if (typeRef == null) return Imports.Il2CppObjectBase;
 
@@ -101,10 +104,22 @@ public class AssemblyRewriteContext
             return new ByReferenceType(RewriteTypeRef(byRef.ElementType));
 
         if (typeRef is PointerType pointerType)
-            return new PointerType(RewriteTypeRef(pointerType.ElementType));
+            return new PointerType(RewriteTypeRef(pointerType.ElementType, true));
 
         if (typeRef is GenericInstanceType genericInstance)
         {
+            var genTypeDef = typeRef.Resolve();
+            var targetAssembly1 = GlobalContext.GetNewAssemblyForOriginal(genTypeDef.Module.Assembly);
+            var genTarget = targetAssembly1.GetContextForOriginalType(genTypeDef);
+
+            if (genTarget.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.NonBlittableStruct && isPointer)
+            {
+                var unboxedType = Pass12CreateUnboxedStructTypedefs.GetOrAddUnboxedVariant(genTarget, genericInstance.GenericArguments.ToArray());
+                Logger.Instance.LogInformation($"Using unboxed (generic) struct instead: {unboxedType}");
+                if (unboxedType != null)
+                    return sourceModule.ImportReference(unboxedType);
+            }
+
             var newRef = new GenericInstanceType(RewriteTypeRef(genericInstance.ElementType));
             foreach (var originalParameter in genericInstance.GenericArguments)
                 newRef.GenericArguments.Add(RewriteTypeRef(originalParameter));
@@ -131,9 +146,17 @@ public class AssemblyRewriteContext
 
         var originalTypeDef = typeRef.Resolve();
         var targetAssembly = GlobalContext.GetNewAssemblyForOriginal(originalTypeDef.Module.Assembly);
-        var target = targetAssembly.GetContextForOriginalType(originalTypeDef).NewType;
+        var target = targetAssembly.GetContextForOriginalType(originalTypeDef);
+        var newType = target.NewType;
 
-        return sourceModule.ImportReference(target);
+        if (target.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.NonBlittableStruct && isPointer)
+        {
+            newType = target.newUnboxedTypes[Array.Empty<TypeReference>()];
+            Logger.Instance.LogInformation($"Using unboxed (non generic) struct instead: {newType}");
+        }
+
+
+        return sourceModule.ImportReference(newType);
     }
 
     public TypeRewriteContext GetTypeByName(string name)
