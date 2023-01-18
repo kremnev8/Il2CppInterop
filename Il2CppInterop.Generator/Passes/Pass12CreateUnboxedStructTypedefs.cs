@@ -5,6 +5,7 @@ using Il2CppInterop.Generator.Contexts;
 using Il2CppInterop.Generator.Utils;
 using Microsoft.Extensions.Logging;
 using Mono.Cecil;
+using Mono.Cecil.Rocks;
 
 namespace Il2CppInterop.Generator.Passes
 {
@@ -16,11 +17,11 @@ namespace Il2CppInterop.Generator.Passes
             foreach (var typeContext in assemblyContext.Types)
                 if (typeContext.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.NonBlittableStruct)
                 {
-                    AddUnboxedVariant(typeContext, Array.Empty<TypeReference>());
+                    GetOrAddUnboxedVariant(typeContext, Array.Empty<TypeReference>());
                 }
         }
 
-        public static TypeDefinition AddUnboxedVariant(TypeRewriteContext typeContext, TypeReference[] genericArguments)
+        public static TypeDefinition GetOrAddUnboxedVariant(TypeRewriteContext typeContext, TypeReference[] genericArguments)
         {
             if (typeContext.newUnboxedTypes.ContainsKey(genericArguments))
                 return typeContext.newUnboxedTypes[genericArguments];
@@ -64,72 +65,18 @@ namespace Il2CppInterop.Generator.Passes
                 try
                 {
                     if (originalField.IsStatic) continue;
+
                     var fieldType = originalField.FieldType;
-
-                    if (fieldType.IsPrimitive)
+                    var newFieldType = RewriteType(typeContext, genericArguments, fieldType, newType);
+                    if (newFieldType == null)
                     {
-                        AddField(originalField, newType, imports.Module.ImportReference(fieldType));
-                    }else if (fieldType.IsPointer)
-                    {
-                        // TODO handle and generate pointers
-
-                        AddField(originalField, newType, imports.Module.IntPtr());
+                        Logger.Instance.LogInformation($"Failed to rewrite type because failed to rewrite field: {originalField.FullName}");
+                        typeContext.newUnboxedTypes.Remove(genericArguments);
+                        typeContext.NewType.NestedTypes.Remove(newType);
+                        return null;
                     }
-                    else
-                    {
-                        if (fieldType.IsGenericParameter && fieldType is GenericParameter genParam)
-                        {
-                            var index = originalType.GenericParameters.IndexOf(genParam);
-                            if (index < 0) continue;
 
-                            fieldType = genericArguments[index];
-                        }
-
-                        var typedef = fieldType.Resolve();
-                        if (typedef == null)
-                        {
-                            Logger.Instance.LogInformation($"Failed to resolve {fieldType.FullName}");
-                            return null;
-                        }
-
-                        var fieldTypeContext = typeContext.AssemblyContext.GlobalContext.GetNewTypeForOriginal(typedef);
-                        if (fieldTypeContext.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.ReferenceType)
-                        {
-                            AddField(originalField, newType, imports.Module.IntPtr());
-                        }
-                        else if (fieldTypeContext.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.NonBlittableStruct)
-                        {
-                            TypeDefinition newFieldType;
-                            if (fieldTypeContext != typeContext)
-                            {
-                                var newTypeGenericArguments = Array.Empty<TypeReference>();
-                                if (fieldType.HasGenericParameters)
-                                {
-                                    newTypeGenericArguments = ReinterpretGenericArguments(typeContext, genericArguments, fieldType);
-                                }else if (fieldType is GenericInstanceType genericInstanceType && genericInstanceType.HasGenericArguments)
-                                {
-                                    newTypeGenericArguments = genericInstanceType.GenericArguments.ToArray();
-                                }
-                                newFieldType = AddUnboxedVariant(fieldTypeContext, newTypeGenericArguments);
-                            }
-                            else
-                            {
-                                newFieldType = newType;
-                            }
-
-                            if (newFieldType == null)
-                            {
-                                Logger.Instance.LogInformation($"Failed to get unbox for {fieldTypeContext.OriginalType.FullName}");
-                                return null;
-                            }
-
-                            AddField(originalField, newType, imports.Module.ImportReference(newFieldType));
-                        }
-                        else
-                        {
-                            AddField(originalField, newType, imports.Module.ImportReference(fieldType));
-                        }
-                    }
+                    AddField(originalField, newType, imports.Module.ImportReference(newFieldType));
                 }
                 catch (Exception e)
                 {
@@ -138,6 +85,99 @@ namespace Il2CppInterop.Generator.Passes
             }
 
             return newType;
+        }
+
+        private static TypeReference RewriteType(TypeRewriteContext typeContext, TypeReference[] genericArguments, TypeReference fieldType, TypeDefinition newType)
+        {
+            var originalType = typeContext.OriginalType;
+            var imports = typeContext.AssemblyContext.Imports;
+
+            if (fieldType.IsArray)
+            {
+                return imports.Module.IntPtr();
+            }
+
+            if (fieldType.IsPrimitive)
+            {
+                return imports.Module.ImportReference(fieldType);
+            }
+
+            if (fieldType.IsPointer)
+            {
+                fieldType = (fieldType as PointerType).ElementType;
+                var rewrittenType = RewriteType(typeContext, genericArguments, fieldType, newType);
+                return rewrittenType?.MakePointerType();
+            }
+
+            if (fieldType.IsGenericParameter && fieldType is GenericParameter genParam)
+            {
+                var index = originalType.GenericParameters.IndexOf(genParam);
+                if (index < 0) return null;
+
+                fieldType = genericArguments[index];
+            }
+
+            var typedef = fieldType.Resolve();
+            if (typedef == null)
+            {
+                Logger.Instance.LogInformation($"Failed to resolve {fieldType.FullName}");
+                return null;
+            }
+
+            var fieldTypeContext = typeContext.AssemblyContext.GlobalContext.GetNewTypeForOriginal(typedef);
+            if (fieldTypeContext.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.ReferenceType)
+            {
+                return imports.Module.IntPtr();
+            }
+
+            if (fieldTypeContext.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.NonBlittableStruct)
+            {
+                TypeDefinition newFieldType;
+                if (fieldTypeContext != typeContext)
+                {
+                    var newTypeGenericArguments = Array.Empty<TypeReference>();
+                    if (fieldType.HasGenericParameters)
+                    {
+                        newTypeGenericArguments = ReinterpretGenericArguments(typeContext, genericArguments, fieldType);
+                    }
+                    else if (fieldType is GenericInstanceType genericInstanceType && genericInstanceType.HasGenericArguments)
+                    {
+                        newTypeGenericArguments = genericInstanceType.GenericArguments.ToArray();
+                        CheckGenericArguments(genericArguments, newTypeGenericArguments, originalType);
+                    }
+
+                    newFieldType = GetOrAddUnboxedVariant(fieldTypeContext, newTypeGenericArguments);
+                }
+                else
+                {
+                    newFieldType = newType;
+                }
+
+                if (newFieldType == null)
+                {
+                    Logger.Instance.LogInformation($"Failed to get unbox for {fieldTypeContext.OriginalType.FullName}");
+                    return null;
+                }
+
+                return imports.Module.ImportReference(newFieldType);
+            }
+
+            return imports.Module.ImportReference(fieldType);
+        }
+
+        private static void CheckGenericArguments(TypeReference[] genericArguments, TypeReference[] newTypeGenericArguments, TypeDefinition originalType)
+        {
+            for (var i = 0; i < newTypeGenericArguments.Length; i++)
+            {
+                var argument = newTypeGenericArguments[i];
+                if (argument is not GenericParameter parameter) continue;
+
+                var index = originalType.GenericParameters.ToList().FindIndex(genericParameter => genericParameter.FullName.Equals(parameter.FullName));
+                if (index >= 0)
+                {
+                    newTypeGenericArguments[i] = genericArguments[index];
+                }
+            }
         }
 
         private static void AddField(FieldDefinition originalField, TypeDefinition newType, TypeReference fieldType)
@@ -149,6 +189,8 @@ namespace Il2CppInterop.Generator.Passes
                     .Single(it => it.AttributeType.Name == "FieldOffsetAttribute")
                     .Fields.Single().Argument.Value, 16);
 
+            Logger.Instance.LogInformation($"{newType.Name} field {newField.Name} offset: {newField.Offset}");
+
             // Special case: bools in Il2Cpp are bytes
             if (newField.FieldType.FullName == "System.Boolean")
                 newField.MarshalInfo = new MarshalInfo(NativeType.U1);
@@ -158,11 +200,11 @@ namespace Il2CppInterop.Generator.Passes
 
         private static TypeReference[] ReinterpretGenericArguments(TypeRewriteContext typeContext, TypeReference[] genericArguments, TypeReference fieldType)
         {
-            var typeGenParams = typeContext.OriginalType.GenericParameters;
+            var typeGenParams = typeContext.OriginalType.GenericParameters.ToList();
             var newTypeGenericArguments = fieldType.GenericParameters.Select(parameter =>
             {
-                var index = typeGenParams.IndexOf(parameter);
-                if (index > 0) return genericArguments[index];
+                var index = typeGenParams.FindIndex(otherParam => parameter.FullName.Equals(otherParam.FullName));
+                if (index >= 0) return genericArguments[index];
                 Logger.Instance.LogInformation($"Failed to match generic parameter {parameter.FullName}");
                 return null;
             }).ToArray();
