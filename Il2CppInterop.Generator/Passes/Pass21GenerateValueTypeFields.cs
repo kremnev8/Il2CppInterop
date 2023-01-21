@@ -26,8 +26,14 @@ public static class Pass21GenerateValueTypeFields
                 try
                 {
                     var newType = typeContext.NewType;
-                    newType.Attributes = (newType.Attributes & ~TypeAttributes.LayoutMask) |
-                                         TypeAttributes.ExplicitLayout;
+
+                    if (!typeContext.OriginalType.HasGenericParameters)
+                        newType.Attributes = (newType.Attributes & ~TypeAttributes.LayoutMask) |
+                                             TypeAttributes.ExplicitLayout;
+                    else
+                        newType.IsSequentialLayout = true;
+
+
 
                     ILGeneratorEx.GenerateBoxMethod(assemblyContext.Imports, newType, typeContext.ClassPointerFieldRef,
                         il2CppSystemTypeRef);
@@ -37,12 +43,17 @@ public static class Pass21GenerateValueTypeFields
                         var field = fieldContext.OriginalField;
                         if (field.IsStatic) continue;
 
-                        var newField = new FieldDefinition(fieldContext.UnmangledName, field.Attributes.ForcePublic(),
-                            !field.FieldType.IsValueType
-                                ? assemblyContext.Imports.Module.IntPtr()
-                                : assemblyContext.RewriteTypeRef(field.FieldType));
+                        TypeReference rewriteTypeRef;
+                        if (!field.FieldType.IsValueType && !field.FieldType.IsPointer)
+                            rewriteTypeRef = assemblyContext.Imports.Module.IntPtr();
+                        else
+                            rewriteTypeRef = assemblyContext.RewriteTypeRef(field.FieldType);
 
-                        newField.Offset = field.ExtractFieldOffset();
+                        var newField = new FieldDefinition(fieldContext.UnmangledName, field.Attributes.ForcePublic(), rewriteTypeRef);
+
+                        if (!typeContext.OriginalType.HasGenericParameters)
+                            newField.Offset = field.ExtractFieldOffset();
+
 
                         // Special case: bools in Il2Cpp are bytes
                         if (newField.FieldType.FullName == "System.Boolean")

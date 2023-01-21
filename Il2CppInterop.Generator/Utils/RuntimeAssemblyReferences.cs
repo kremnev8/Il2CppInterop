@@ -6,6 +6,7 @@ using System.Linq;
 using Il2CppInterop.Common.Attributes;
 using Il2CppInterop.Generator.Contexts;
 using Mono.Cecil;
+using Mono.Cecil.Rocks;
 
 namespace Il2CppInterop.Generator.Utils;
 
@@ -62,6 +63,7 @@ public class RuntimeAssemblyReferences
     public Lazy<MethodReference> IL2CPP_il2cpp_method_get_from_reflection { get; private set; }
     public Lazy<MethodReference> IL2CPP_il2cpp_method_get_object { get; private set; }
     public Lazy<MethodReference> IL2CPP_PointerToValueGeneric { get; private set; }
+    public Lazy<MethodReference> IL2CPP_PointerToRefValueGeneric { get; private set; }
     public Lazy<MethodReference> IL2CPP_RenderTypeName { get; private set; }
     public Lazy<MethodReference> ObfuscatedNameAttributector { get; private set; }
     public Lazy<MethodReference> CallerCountAttributector { get; private set; }
@@ -537,6 +539,20 @@ public class RuntimeAssemblyReferences
             var gp0 = new GenericParameter("T", mr);
             mr.GenericParameters.Add(gp0);
             mr.ReturnType = gp0;
+            mr.HasThis = false;
+            mr.Parameters.Add(new ParameterDefinition("", ParameterAttributes.None, ResolveType("System.IntPtr")));
+            mr.Parameters.Add(new ParameterDefinition("", ParameterAttributes.None, ResolveType("System.Boolean")));
+            mr.Parameters.Add(new ParameterDefinition("", ParameterAttributes.None, ResolveType("System.Boolean")));
+            return mr;
+        });
+
+        IL2CPP_PointerToRefValueGeneric = new Lazy<MethodReference>(() =>
+        {
+            var mr = new MethodReference("PointerToValueGenericByRef", Module.Void(),
+                ResolveType("Il2CppInterop.Runtime.IL2CPP"));
+            var gp0 = new GenericParameter("T", mr);
+            mr.GenericParameters.Add(gp0);
+            mr.ReturnType = gp0.MakeByReferenceType();
             mr.HasThis = false;
             mr.Parameters.Add(new ParameterDefinition("", ParameterAttributes.None, ResolveType("System.IntPtr")));
             mr.Parameters.Add(new ParameterDefinition("", ParameterAttributes.None, ResolveType("System.Boolean")));
