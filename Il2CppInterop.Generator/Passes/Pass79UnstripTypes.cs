@@ -37,7 +37,8 @@ public static class Pass79UnstripTypes
     private static void ProcessType(AssemblyRewriteContext processedAssembly, TypeDefinition unityType,
         TypeDefinition? enclosingNewType, RuntimeAssemblyReferences imports, ref int typesUnstripped)
     {
-        if (unityType.Name == "<Module>")
+        if (unityType.Name == "<Module>" ||
+            unityType.Name == "IsUnmanagedAttribute")
             return;
         var newModule = processedAssembly.NewAssembly.MainModule;
         var processedType = enclosingNewType == null
