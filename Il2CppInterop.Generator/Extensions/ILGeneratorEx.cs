@@ -222,11 +222,12 @@ public static class ILGeneratorEx
         {
             body.Emit(OpCodes.Ldarg, argumentIndex);
             body.Emit(OpCodes.Call, imports.IL2CPP_ManagedStringToIl2Cpp.Value);
-        }else if (originalType.IsPointer)
+        }
+        else if (originalType.IsPointer)
         {
             body.Emit(OpCodes.Ldarg, argumentIndex);
             body.Emit(OpCodes.Call, new MethodReference("op_Explicit", imports.Module.IntPtr(), imports.Module.IntPtr())
-                { Parameters = { new ParameterDefinition(imports.Module.ImportReference(typeof(void*))) } });
+            { Parameters = { new ParameterDefinition(imports.Module.ImportReference(typeof(void*))) } });
         }
         else
         {
@@ -400,13 +401,13 @@ public static class ILGeneratorEx
         {
             body.Emit(OpCodes.Call,
                 imports.Module.ImportReference(new GenericInstanceMethod(imports.IL2CPP_PointerToRefValueGeneric.Value)
-                    { GenericArguments = { newReturnType } }));
+                { GenericArguments = { newReturnType } }));
         }
         else
         {
             body.Emit(OpCodes.Call,
                 imports.Module.ImportReference(new GenericInstanceMethod(imports.IL2CPP_PointerToValueGeneric.Value)
-                    { GenericArguments = { newReturnType } }));
+                { GenericArguments = { newReturnType } }));
         }
     }
 
