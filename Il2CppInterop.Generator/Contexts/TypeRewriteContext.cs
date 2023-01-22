@@ -49,8 +49,6 @@ public class TypeRewriteContext
             ComputedTypeSpecifics = TypeSpecifics.ReferenceType;
         else if (OriginalType.IsEnum)
             ComputedTypeSpecifics = TypeSpecifics.BlittableStruct;
-        //else if (OriginalType.HasGenericParameters)
-        //    ComputedTypeSpecifics = TypeSpecifics.NonBlittableStruct; // not reference type, covered by first if
     }
 
     public FieldReference ClassPointerFieldRef { get; private set; }

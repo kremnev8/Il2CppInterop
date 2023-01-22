@@ -397,18 +397,9 @@ public static class ILGeneratorEx
         body.Emit(extraDerefForNonValueTypes ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
         body.Emit(unboxValueType ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
 
-        if (originalReturnType.IsByReference)
-        {
-            body.Emit(OpCodes.Call,
-                imports.Module.ImportReference(new GenericInstanceMethod(imports.IL2CPP_PointerToRefValueGeneric.Value)
+        body.Emit(OpCodes.Call,
+            imports.Module.ImportReference(new GenericInstanceMethod(imports.IL2CPP_PointerToValueGeneric.Value)
                 { GenericArguments = { newReturnType } }));
-        }
-        else
-        {
-            body.Emit(OpCodes.Call,
-                imports.Module.ImportReference(new GenericInstanceMethod(imports.IL2CPP_PointerToValueGeneric.Value)
-                { GenericArguments = { newReturnType } }));
-        }
     }
 
     public static void GenerateBoxMethod(RuntimeAssemblyReferences imports, TypeDefinition targetType,
