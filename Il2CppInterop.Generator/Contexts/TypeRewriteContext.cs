@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Il2CppInterop.Generator.Passes;
 using Il2CppInterop.Generator.Utils;
 using Mono.Cecil;
 
@@ -23,6 +24,8 @@ public class TypeRewriteContext
     private readonly Dictionary<MethodDefinition, MethodRewriteContext> myMethodContexts = new();
     private readonly Dictionary<string, MethodRewriteContext> myMethodContextsByName = new();
     public readonly TypeDefinition NewType;
+    public TypeRewriteContext BoxedTypeContext;
+    public bool isBoxedTypeVariant;
 
     public readonly bool OriginalNameWasObfuscated;
     public readonly TypeDefinition OriginalType;
@@ -38,7 +41,8 @@ public class TypeRewriteContext
 
         if (OriginalType == null) return;
 
-        OriginalNameWasObfuscated = OriginalType.Name != NewType.Name;
+        OriginalNameWasObfuscated = OriginalType.Name != NewType.Name &&
+                                    Pass12CreateGenericNonBlittableTypes.GetNewName(originalType.Name) != NewType.Name;
         if (OriginalNameWasObfuscated)
             NewType.CustomAttributes.Add(new CustomAttribute(assemblyContext.Imports.ObfuscatedNameAttributector.Value)
             {

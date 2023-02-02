@@ -100,7 +100,7 @@ public class MethodRewriteContext
         UnmangledNameWithSignature = UnmangleMethodNameWithSignature();
 
         NewMethod.Name = UnmangledName;
-        NewMethod.ReturnType = DeclaringType.AssemblyContext.RewriteTypeRef(OriginalMethod.ReturnType);
+        NewMethod.ReturnType = DeclaringType.AssemblyContext.RewriteTypeRef(OriginalMethod.ReturnType, DeclaringType.isBoxedTypeVariant);
 
         var nonGenericMethodInfoPointerField = new FieldDefinition(
             "NativeMethodInfoPtr_" + UnmangledNameWithSignature,
@@ -140,7 +140,7 @@ public class MethodRewriteContext
                         oldConstraint.ConstraintType.Resolve()?.IsInterface == true) continue;
 
                     newParameter.Constraints.Add(new GenericParameterConstraint(
-                        DeclaringType.AssemblyContext.RewriteTypeRef(oldConstraint.ConstraintType)));
+                        DeclaringType.AssemblyContext.RewriteTypeRef(oldConstraint.ConstraintType, DeclaringType.isBoxedTypeVariant)));
                 }
             }
 
@@ -220,12 +220,12 @@ public class MethodRewriteContext
                 builder.Append(str);
 
         builder.Append('_');
-        builder.Append(DeclaringType.AssemblyContext.RewriteTypeRef(method.ReturnType).GetUnmangledName());
+        builder.Append(DeclaringType.AssemblyContext.RewriteTypeRef(method.ReturnType, DeclaringType.isBoxedTypeVariant).GetUnmangledName());
 
         foreach (var param in method.Parameters)
         {
             builder.Append('_');
-            builder.Append(DeclaringType.AssemblyContext.RewriteTypeRef(param.ParameterType).GetUnmangledName());
+            builder.Append(DeclaringType.AssemblyContext.RewriteTypeRef(param.ParameterType, DeclaringType.isBoxedTypeVariant).GetUnmangledName());
         }
 
         var address = Rva;

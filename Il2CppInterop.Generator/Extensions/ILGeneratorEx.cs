@@ -399,7 +399,7 @@ public static class ILGeneratorEx
 
         body.Emit(OpCodes.Call,
             imports.Module.ImportReference(new GenericInstanceMethod(imports.IL2CPP_PointerToValueGeneric.Value)
-                { GenericArguments = { newReturnType } }));
+            { GenericArguments = { newReturnType } }));
     }
 
     public static void GenerateBoxMethod(RuntimeAssemblyReferences imports, TypeDefinition targetType,
