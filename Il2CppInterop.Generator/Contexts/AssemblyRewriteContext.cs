@@ -33,6 +33,7 @@ public class AssemblyRewriteContext
     }
 
     public IEnumerable<TypeRewriteContext> Types => myNewTypeMap.Values;
+    public IEnumerable<TypeRewriteContext> OriginalTypes => myOldTypeMap.Values;
 
     public TypeRewriteContext GetContextForOriginalType(TypeDefinition type)
     {
@@ -49,14 +50,17 @@ public class AssemblyRewriteContext
         return myNewTypeMap[type];
     }
 
+    public void RegisterTypeContext(TypeRewriteContext context)
+    {
+        myNewTypeMap.Add(context.NewType, context);
+    }
+
     public void RegisterTypeRewrite(TypeRewriteContext context)
     {
-        var exists = context.OriginalType != null && myOldTypeMap.ContainsKey(context.OriginalType);
-        if (context.OriginalType != null && !exists)
+        if (context.OriginalType != null)
             myOldTypeMap[context.OriginalType] = context;
         myNewTypeMap[context.NewType] = context;
-        if (!exists)
-            myNameTypeMap[(context.OriginalType ?? context.NewType).FullName] = context;
+        myNameTypeMap[(context.OriginalType ?? context.NewType).FullName] = context;
     }
 
     public MethodReference RewriteMethodRef(MethodReference methodRef)
