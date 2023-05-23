@@ -158,7 +158,7 @@ public static class ILGeneratorEx
 
     public static void EmitObjectToPointer(this ILProcessor body, TypeReference originalType, TypeReference newType,
         TypeRewriteContext enclosingType, int argumentIndex, bool valueTypeArgument0IsAPointer, bool allowNullable,
-        bool unboxNonBlittableType, out VariableDefinition? refVariable)
+        bool unboxNonBlittableType, bool unboxNonBlittableGeneric, out VariableDefinition? refVariable)
     {
         // input stack: not used
         // output stack: IntPtr to either Il2CppObject or IL2CPP value type
@@ -167,7 +167,7 @@ public static class ILGeneratorEx
         if (originalType is GenericParameter)
         {
             EmitObjectToPointerGeneric(body, originalType, newType, enclosingType, argumentIndex,
-                valueTypeArgument0IsAPointer, allowNullable, unboxNonBlittableType);
+                valueTypeArgument0IsAPointer, allowNullable, unboxNonBlittableGeneric);
             return;
         }
 
@@ -437,9 +437,20 @@ public static class ILGeneratorEx
             var stnop = body.Create(OpCodes.Nop);
             body.Emit(OpCodes.Brfalse_S, nullbr);
 
-            body.Emit(OpCodes.Newobj,
-                new MethodReference(".ctor", imports.Module.Void(), newMethodParameter.ParameterType.GetElementType())
-                { HasThis = true, Parameters = { new ParameterDefinition(imports.Module.IntPtr()) } });
+            if (newMethodParameter.ParameterType.GetElementType() is GenericParameter)
+            {
+                body.Emit(OpCodes.Ldc_I4_0);
+                body.Emit(OpCodes.Ldc_I4_0);
+                body.Emit(OpCodes.Call,
+                    imports.Module.ImportReference(new GenericInstanceMethod(imports.IL2CPP_PointerToValueGeneric.Value)
+                    { GenericArguments = { newMethodParameter.ParameterType.GetElementType() } }));
+            }
+            else
+            {
+                body.Emit(OpCodes.Newobj,
+                    new MethodReference(".ctor", imports.Module.Void(), newMethodParameter.ParameterType.GetElementType())
+                    { HasThis = true, Parameters = { new ParameterDefinition(imports.Module.IntPtr()) } });
+            }
             body.Emit(OpCodes.Br_S, stnop);
 
             body.Append(nullbr);

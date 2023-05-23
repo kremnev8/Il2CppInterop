@@ -69,10 +69,10 @@ public static unsafe partial class ClassInjector
     private static readonly HashSet<string> InjectedTypes = new();
 
     /// <summary> (method) : (method_inst, method) </summary>
-    private static readonly Dictionary<IntPtr, (MethodInfo, Dictionary<IntPtr, IntPtr>)>
+    internal static readonly Dictionary<IntPtr, (MethodInfo, Dictionary<IntPtr, IntPtr>)>
         InflatedMethodFromContextDictionary = new();
 
-    private static readonly ConcurrentDictionary<string, InvokerDelegate> InvokerCache = new();
+    private static readonly ConcurrentDictionary<string, Delegate> InvokerCache = new();
 
     private static readonly ConcurrentDictionary<(Type type, FieldAttributes attrs), IntPtr>
         _injectedFieldTypes = new();
@@ -597,7 +597,16 @@ public static unsafe partial class ClassInjector
         converted.Name = Marshal.StringToHGlobalAnsi(methodName);
         converted.Class = declaringClass.ClassPointer;
 
-        var invoker = new InvokerDelegate(StaticVoidIntPtrInvoker);
+        Delegate invoker;
+        if (UnityVersionHandler.IsMetadataV29OrHigher)
+        {
+            invoker = new InvokerDelegateMetadataV29(StaticVoidIntPtrInvoker_MetadataV29);
+        }
+        else
+        {
+            invoker = new InvokerDelegate(StaticVoidIntPtrInvoker);
+        }
+
         GCHandle.Alloc(invoker);
         converted.InvokerMethod = Marshal.GetFunctionPointerForDelegate(invoker);
 
@@ -614,7 +623,7 @@ public static unsafe partial class ClassInjector
         return converted.MethodInfoPointer;
     }
 
-    private static Il2CppMethodInfo* ConvertMethodInfo(MethodInfo monoMethod, INativeClassStruct declaringClass)
+    internal static Il2CppMethodInfo* ConvertMethodInfo(MethodInfo monoMethod, INativeClassStruct declaringClass)
     {
         var converted = UnityVersionHandler.NewMethod();
         converted.Name = Marshal.StringToHGlobalAnsi(monoMethod.Name);
@@ -692,6 +701,7 @@ public static unsafe partial class ClassInjector
         {
             converted.InvokerMethod = Marshal.GetFunctionPointerForDelegate(GetOrCreateInvoker(monoMethod));
             converted.MethodPointer = Marshal.GetFunctionPointerForDelegate(GetOrCreateTrampoline(monoMethod));
+            converted.VirtualMethodPointer = converted.MethodPointer;
         }
 
         converted.Slot = ushort.MaxValue;
@@ -787,10 +797,10 @@ public static unsafe partial class ClassInjector
         GCHandle.FromIntPtr(gcHandle).Free();
     }
 
-    private static InvokerDelegate GetOrCreateInvoker(MethodInfo monoMethod)
+    private static Delegate GetOrCreateInvoker(MethodInfo monoMethod)
     {
         return InvokerCache.GetOrAdd(ExtractSignature(monoMethod),
-            (_, monoMethodInner) => CreateInvoker(monoMethodInner), monoMethod);
+            static (_, monoMethodInner) => CreateInvoker(monoMethodInner), monoMethod);
     }
 
     private static Delegate GetOrCreateTrampoline(MethodInfo monoMethod)
@@ -798,13 +808,25 @@ public static unsafe partial class ClassInjector
         return CreateTrampoline(monoMethod);
     }
 
-    private static InvokerDelegate CreateInvoker(MethodInfo monoMethod)
+    private static Delegate CreateInvoker(MethodInfo monoMethod)
     {
-        var parameterTypes = new[] { typeof(IntPtr), typeof(Il2CppMethodInfo*), typeof(IntPtr), typeof(IntPtr*) };
+        DynamicMethod method;
+        if (UnityVersionHandler.IsMetadataV29OrHigher)
+        {
+            var parameterTypes = new[] { typeof(IntPtr), typeof(Il2CppMethodInfo*), typeof(IntPtr), typeof(IntPtr*), typeof(IntPtr*) };
 
-        var method = new DynamicMethod("Invoker_" + ExtractSignature(monoMethod),
-            MethodAttributes.Static | MethodAttributes.Public, CallingConventions.Standard, typeof(IntPtr),
-            parameterTypes, monoMethod.DeclaringType, true);
+            method = new DynamicMethod("Invoker_" + ExtractSignature(monoMethod),
+                MethodAttributes.Static | MethodAttributes.Public, CallingConventions.Standard, typeof(void),
+                parameterTypes, monoMethod.DeclaringType, true);
+        }
+        else
+        {
+            var parameterTypes = new[] { typeof(IntPtr), typeof(Il2CppMethodInfo*), typeof(IntPtr), typeof(IntPtr*) };
+
+            method = new DynamicMethod("Invoker_" + ExtractSignature(monoMethod),
+                MethodAttributes.Static | MethodAttributes.Public, CallingConventions.Standard, typeof(IntPtr),
+                parameterTypes, monoMethod.DeclaringType, true);
+        }
 
         var body = method.GetILGenerator();
 
@@ -826,29 +848,53 @@ public static unsafe partial class ClassInjector
             new[] { typeof(IntPtr) }.Concat(monoMethod.GetParameters().Select(it => it.ParameterType.NativeType()))
                 .ToArray());
 
-        if (monoMethod.ReturnType == typeof(void))
+        if (UnityVersionHandler.IsMetadataV29OrHigher)
         {
-            body.Emit(OpCodes.Ldc_I4_0);
-            body.Emit(OpCodes.Conv_I);
+            if (monoMethod.ReturnType != typeof(void))
+            {
+                var returnValue = body.DeclareLocal(monoMethod.ReturnType.NativeType());
+                body.Emit(OpCodes.Stloc, returnValue);
+                body.Emit(OpCodes.Ldarg_S, (byte)4);
+                body.Emit(OpCodes.Ldloc, returnValue);
+                body.Emit(OpCodes.Stobj, returnValue.LocalType);
+            }
         }
-        else if (monoMethod.ReturnType.IsValueType)
+        else
         {
-            var returnValue = body.DeclareLocal(monoMethod.ReturnType);
-            body.Emit(OpCodes.Stloc, returnValue);
-            var classField = typeof(Il2CppClassPointerStore<>).MakeGenericType(monoMethod.ReturnType)
-                .GetField(nameof(Il2CppClassPointerStore<int>.NativeClassPtr));
-            body.Emit(OpCodes.Ldsfld, classField);
-            body.Emit(OpCodes.Ldloca, returnValue);
-            body.Emit(OpCodes.Call, typeof(IL2CPP).GetMethod(nameof(IL2CPP.il2cpp_value_box))!);
+            if (monoMethod.ReturnType == typeof(void))
+            {
+                body.Emit(OpCodes.Ldc_I4_0);
+                body.Emit(OpCodes.Conv_I);
+            }
+            else if (monoMethod.ReturnType.IsValueType)
+            {
+                var returnValue = body.DeclareLocal(monoMethod.ReturnType);
+                body.Emit(OpCodes.Stloc, returnValue);
+                var classField = typeof(Il2CppClassPointerStore<>).MakeGenericType(monoMethod.ReturnType)
+                    .GetField(nameof(Il2CppClassPointerStore<int>.NativeClassPtr));
+                body.Emit(OpCodes.Ldsfld, classField);
+                body.Emit(OpCodes.Ldloca, returnValue);
+                body.Emit(OpCodes.Call, typeof(IL2CPP).GetMethod(nameof(IL2CPP.il2cpp_value_box))!);
+            }
         }
 
         body.Emit(OpCodes.Ret);
 
         GCHandle.Alloc(method);
 
-        var @delegate = (InvokerDelegate)method.CreateDelegate(typeof(InvokerDelegate));
+        var @delegate = method.CreateDelegate(GetInvokerDelegateType());
         GCHandle.Alloc(@delegate);
         return @delegate;
+    }
+
+    private static Type GetInvokerDelegateType()
+    {
+        if (UnityVersionHandler.IsMetadataV29OrHigher)
+        {
+            return typeof(InvokerDelegateMetadataV29);
+        }
+
+        return typeof(InvokerDelegate);
     }
 
     private static IntPtr StaticVoidIntPtrInvoker(IntPtr methodPointer, Il2CppMethodInfo* methodInfo, IntPtr obj,
@@ -856,6 +902,12 @@ public static unsafe partial class ClassInjector
     {
         Marshal.GetDelegateForFunctionPointer<VoidCtorDelegate>(methodPointer)(obj);
         return IntPtr.Zero;
+    }
+
+    private static void StaticVoidIntPtrInvoker_MetadataV29(IntPtr methodPointer, Il2CppMethodInfo* methodInfo, IntPtr obj,
+        IntPtr* args, IntPtr* returnValue)
+    {
+        Marshal.GetDelegateForFunctionPointer<VoidCtorDelegate>(methodPointer)(obj);
     }
 
     private static Delegate CreateTrampoline(MethodInfo monoMethod)
@@ -1082,39 +1134,18 @@ public static unsafe partial class ClassInjector
         return fullName.ToString();
     }
 
-    private static Type SystemTypeFromIl2CppType(Il2CppTypeStruct* typePointer)
+    internal static Type SystemTypeFromIl2CppType(Il2CppTypeStruct* typePointer)
     {
         var fullName = GetIl2CppTypeFullName(typePointer);
         var type = Type.GetType(fullName) ?? throw new NullReferenceException($"Couldn't find System.Type for Il2Cpp type: {fullName}");
         return RewriteType(type);
     }
 
-    internal static Il2CppMethodInfo* hkGenericMethodGetMethod(Il2CppGenericMethod* gmethod, bool copyMethodPtr)
-    {
-        if (InflatedMethodFromContextDictionary.TryGetValue((IntPtr)gmethod->methodDefinition, out var methods))
-        {
-            var instancePointer = gmethod->context.method_inst;
-            if (methods.Item2.TryGetValue((IntPtr)instancePointer, out var inflatedMethodPointer))
-                return (Il2CppMethodInfo*)inflatedMethodPointer;
-
-            var typeArguments = new Type[instancePointer->type_argc];
-            for (var i = 0; i < instancePointer->type_argc; i++)
-                typeArguments[i] = SystemTypeFromIl2CppType(instancePointer->type_argv[i]);
-            var inflatedMethod = methods.Item1.MakeGenericMethod(typeArguments);
-            Logger.Instance.LogTrace("Inflated method: {InflatedMethod}", inflatedMethod.Name);
-            inflatedMethodPointer = (IntPtr)ConvertMethodInfo(inflatedMethod,
-                UnityVersionHandler.Wrap(UnityVersionHandler.Wrap(gmethod->methodDefinition).Class));
-            methods.Item2.Add((IntPtr)instancePointer, inflatedMethodPointer);
-
-            return (Il2CppMethodInfo*)inflatedMethodPointer;
-        }
-
-        return InjectorHelpers.GenericMethodGetMethodOriginal(gmethod, copyMethodPtr);
-    }
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void InvokerDelegateMetadataV29(IntPtr methodPointer, Il2CppMethodInfo* methodInfo, IntPtr obj, IntPtr* args, IntPtr* returnValue);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate IntPtr InvokerDelegate(IntPtr methodPointer, Il2CppMethodInfo* methodInfo, IntPtr obj,
-        IntPtr* args);
+    private delegate IntPtr InvokerDelegate(IntPtr methodPointer, Il2CppMethodInfo* methodInfo, IntPtr obj, IntPtr* args);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void VoidCtorDelegate(IntPtr objectPointer);
