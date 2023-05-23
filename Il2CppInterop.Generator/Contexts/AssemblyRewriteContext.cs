@@ -1,7 +1,7 @@
-using System.Collections.Generic;
 using Il2CppInterop.Generator.Extensions;
 using Il2CppInterop.Generator.Utils;
 using Mono.Cecil;
+using Mono.Cecil.Cil;
 
 namespace Il2CppInterop.Generator.Contexts;
 
@@ -15,6 +15,7 @@ public class AssemblyRewriteContext
     public readonly RuntimeAssemblyReferences Imports;
     private readonly Dictionary<string, TypeRewriteContext> myNameTypeMap = new();
     private readonly Dictionary<TypeDefinition, TypeRewriteContext> myNewTypeMap = new();
+    private TypeDefinition isUnmanagedAttributeType;
 
     private readonly Dictionary<TypeDefinition, TypeRewriteContext> myOldTypeMap = new();
     public readonly AssemblyDefinition NewAssembly;
@@ -159,11 +160,7 @@ public class AssemblyRewriteContext
 
     private TypeRewriteContext GetTypeContext(TypeReference typeRef)
     {
-        var typeDef = typeRef.Resolve();
-        var targetAssembly = GlobalContext.GetNewAssemblyForOriginal(typeDef.Module.Assembly);
-        var typeContext = targetAssembly.GetContextForOriginalType(typeDef);
-
-        return typeContext;
+        return GlobalContext.GetNewTypeForOriginal(typeRef.Resolve());
     }
 
     private bool IsUnmanaged(TypeReference originalType, bool typeIsBoxed)
@@ -185,6 +182,23 @@ public class AssemblyRewriteContext
 
         var paramTypeContext = GetTypeContext(originalType);
         return paramTypeContext.ComputedTypeSpecifics.IsBlittable();
+    }
+
+    public TypeDefinition GetOrInjectIsUnmanagedAttribute()
+    {
+        if (isUnmanagedAttributeType != null)
+            return isUnmanagedAttributeType;
+
+        isUnmanagedAttributeType = new TypeDefinition("System.Runtime.CompilerServices", "IsUnmanagedAttribute", TypeAttributes.AnsiClass | TypeAttributes.BeforeFieldInit | TypeAttributes.Public | TypeAttributes.Sealed, NewAssembly.MainModule.ImportReference(typeof(Attribute)));
+        NewAssembly.MainModule.Types.Add(isUnmanagedAttributeType);
+
+        var attributeCctr = new MethodDefinition(".ctor", MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.RTSpecialName | MethodAttributes.SpecialName, NewAssembly.MainModule.TypeSystem.Void);
+        isUnmanagedAttributeType.Methods.Add(attributeCctr);
+        var ilProcessor = attributeCctr.Body.GetILProcessor();
+        ilProcessor.Emit(OpCodes.Ldarg_0);
+        ilProcessor.Emit(OpCodes.Call, NewAssembly.MainModule.ImportReference(isUnmanagedAttributeType.BaseType.DefaultCtorFor()));
+        ilProcessor.Emit(OpCodes.Ret);
+        return isUnmanagedAttributeType;
     }
 
     public TypeRewriteContext GetTypeByName(string name)

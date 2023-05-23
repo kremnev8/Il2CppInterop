@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Il2CppInterop.Common.XrefScans;
@@ -69,7 +67,16 @@ public class MethodRewriteContext
             foreach (var oldParameter in genericParams)
             {
                 var genericParameter = new GenericParameter(oldParameter.Name, newMethod);
-                genericParameter.Attributes = oldParameter.Attributes.StripValueTypeConstraint();
+                if (ShouldParameterBeBlittable(originalMethod, oldParameter))
+                {
+                    genericParameter.Attributes = oldParameter.Attributes;
+                    genericParameter.MakeUnmanaged(DeclaringType.AssemblyContext);
+                }
+                else
+                {
+                    genericParameter.Attributes = oldParameter.Attributes.StripValueTypeConstraint();
+                }
+
                 newMethod.GenericParameters.Add(genericParameter);
             }
         }
@@ -84,6 +91,38 @@ public class MethodRewriteContext
         Rva = originalMethod.ExtractRva();
         if (FileOffset != 0)
             declaringType.AssemblyContext.GlobalContext.MethodStartAddresses.Add(FileOffset);
+    }
+
+    private bool ShouldParameterBeBlittable(MethodDefinition method, GenericParameter genericParameter)
+    {
+        if (HasGenericParameter(method.ReturnType, genericParameter, out GenericParameter parameter))
+        {
+            return parameter.IsUnmanaged();
+        }
+
+        foreach (ParameterDefinition methodParameter in method.Parameters)
+        {
+            if (HasGenericParameter(methodParameter.ParameterType, genericParameter, out parameter))
+            {
+                return parameter.IsUnmanaged();
+            }
+        }
+
+        return false;
+    }
+
+    private bool HasGenericParameter(TypeReference typeReference, GenericParameter inputGenericParameter, out GenericParameter typeGenericParameter)
+    {
+        typeGenericParameter = null;
+        if (typeReference is not GenericInstanceType genericInstance) return false;
+
+        var index = genericInstance.GenericArguments.IndexOf(inputGenericParameter);
+        if (index < 0) return false;
+
+        var globalContext = DeclaringType.AssemblyContext.GlobalContext;
+        var returnTypeContext = globalContext.GetNewTypeForOriginal(typeReference.Resolve());
+        typeGenericParameter = returnTypeContext.NewType.GenericParameters[index];
+        return true;
     }
 
     public string UnmangledName { get; private set; }
