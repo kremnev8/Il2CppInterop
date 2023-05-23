@@ -18,7 +18,8 @@ public static class Pass13FillTypedefs
                     var newParameter = new GenericParameter(originalParameter.Name, typeContext.NewType);
                     typeContext.NewType.GenericParameters.Add(newParameter);
 
-                    if (!typeContext.ComputedTypeSpecifics.IsBlittable())
+                    if (!typeContext.ComputedTypeSpecifics.IsBlittable() ||
+                        typeContext.genericParameterUsage[originalParameter.Position] == TypeRewriteContext.GenericParameterUsage.NotUsed)
                         newParameter.Attributes = originalParameter.Attributes.StripValueTypeConstraint();
                     else
                     {
