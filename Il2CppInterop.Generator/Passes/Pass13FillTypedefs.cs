@@ -18,14 +18,16 @@ public static class Pass13FillTypedefs
                     var newParameter = new GenericParameter(originalParameter.Name, typeContext.NewType);
                     typeContext.NewType.GenericParameters.Add(newParameter);
 
-                    if (!typeContext.ComputedTypeSpecifics.IsBlittable() ||
-                        typeContext.genericParameterUsage[originalParameter.Position] == TypeRewriteContext.GenericParameterUsage.NotUsed)
-                        newParameter.Attributes = originalParameter.Attributes.StripValueTypeConstraint();
-                    else
+                    var parameterSpecifics = typeContext.genericParameterUsage[originalParameter.Position];
+                    if (parameterSpecifics == TypeRewriteContext.GenericParameterSpecifics.Strict ||
+                        (parameterSpecifics == TypeRewriteContext.GenericParameterSpecifics.Relaxed &&
+                         typeContext.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.GenericBlittableStruct))
                     {
                         newParameter.Attributes = originalParameter.Attributes;
                         newParameter.MakeUnmanaged(assemblyContext);
                     }
+                    else
+                        newParameter.Attributes = originalParameter.Attributes.StripValueTypeConstraint();
                 }
 
                 if (typeContext.OriginalType.IsEnum)
@@ -37,8 +39,8 @@ public static class Pass13FillTypedefs
 
         // Second pass is explicitly done after first to account for rewriting of generic base types - value-typeness is important there
         foreach (var assemblyContext in context.Assemblies)
-            foreach (var typeContext in assemblyContext.Types)
-                if (!typeContext.OriginalType.IsEnum && !typeContext.ComputedTypeSpecifics.IsBlittable())
-                    typeContext.NewType.BaseType = assemblyContext.RewriteTypeRef(typeContext.OriginalType.BaseType, false);
+        foreach (var typeContext in assemblyContext.Types)
+            if (!typeContext.OriginalType.IsEnum && !typeContext.ComputedTypeSpecifics.IsBlittable())
+                typeContext.NewType.BaseType = assemblyContext.RewriteTypeRef(typeContext.OriginalType.BaseType, false);
     }
 }

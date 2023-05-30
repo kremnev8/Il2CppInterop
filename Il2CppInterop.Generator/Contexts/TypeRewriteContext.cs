@@ -18,11 +18,11 @@ public class TypeRewriteContext
         NonBlittableStruct
     }
 
-    public enum GenericParameterUsage
+    public enum GenericParameterSpecifics
     {
-        NotUsed,
-        Pointers,
-        Used
+        Unused,
+        Relaxed,
+        Strict
     }
 
     public readonly AssemblyRewriteContext AssemblyContext;
@@ -38,7 +38,8 @@ public class TypeRewriteContext
     public readonly TypeDefinition OriginalType;
 
     public TypeSpecifics ComputedTypeSpecifics;
-    public GenericParameterUsage[] genericParameterUsage;
+    public GenericParameterSpecifics[] genericParameterUsage;
+    public bool genericParameterUsageComputed;
 
     public TypeRewriteContext(AssemblyRewriteContext assemblyContext, TypeDefinition originalType,
         TypeDefinition newType)
@@ -49,7 +50,7 @@ public class TypeRewriteContext
 
         if (OriginalType == null) return;
 
-        genericParameterUsage = new GenericParameterUsage[OriginalType.GenericParameters.Count];
+        genericParameterUsage = new GenericParameterSpecifics[OriginalType.GenericParameters.Count];
         OriginalNameWasObfuscated = OriginalType.Name != NewType.Name &&
                                     Pass12CreateGenericNonBlittableTypes.GetNewName(originalType.Name) != NewType.Name;
         if (OriginalNameWasObfuscated)
@@ -181,5 +182,17 @@ public class TypeRewriteContext
         }
 
         return null;
+    }
+
+    public void SetGenericParameterUsageSpecifics(int position, GenericParameterSpecifics specifics)
+    {
+        if (position >= 0 && position < genericParameterUsage.Length)
+        {
+            var currentUsage = genericParameterUsage[position];
+            if (specifics > currentUsage)
+            {
+                genericParameterUsage[position] = specifics;
+            }
+        }
     }
 }
