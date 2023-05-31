@@ -22,7 +22,7 @@ public class TypeRewriteContext
     {
         Unused,
         Relaxed,
-        UsedInFields,
+        AffectsBlittability,
         Strict,
     }
 
