@@ -124,7 +124,7 @@ public static class Pass11ComputeTypeSpecifics
             if (originalField.IsStatic) continue;
 
             FindTypeGenericParameters(globalContext, originalField.FieldType,
-                TypeRewriteContext.GenericParameterSpecifics.Relaxed, OnResult);
+                TypeRewriteContext.GenericParameterSpecifics.UsedInFields, OnResult);
         }
 
         foreach (var originalField in originalType.Fields)
@@ -199,7 +199,7 @@ public static class Pass11ComputeTypeSpecifics
             for (var i = 0; i < genericInstance.GenericArguments.Count; i++)
             {
                 var myConstraint = typeContext.genericParameterUsage[i];
-                if (myConstraint == TypeRewriteContext.GenericParameterSpecifics.Relaxed)
+                if (myConstraint.IsRelaxed())
                     myConstraint = currentConstraint;
 
                 var genericArgument = genericInstance.GenericArguments[i];
@@ -253,7 +253,8 @@ public static class Pass11ComputeTypeSpecifics
 
                     var genericArgumentContext = typeContext.AssemblyContext.GlobalContext.GetNewTypeForOriginal(genericArgument.Resolve());
                     ComputeSpecifics(genericArgumentContext);
-                    if (genericArgumentContext.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.NonBlittableStruct)
+                    if (genericArgumentContext.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.NonBlittableStruct ||
+                        genericArgumentContext.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.ReferenceType)
                     {
                         typeContext.ComputedTypeSpecifics = TypeRewriteContext.TypeSpecifics.NonBlittableStruct;
                         return;
@@ -272,7 +273,7 @@ public static class Pass11ComputeTypeSpecifics
             typeContext.ComputedTypeSpecifics = TypeRewriteContext.TypeSpecifics.GenericBlittableStruct;
             foreach (var genericParameter in typeContext.OriginalType.GenericParameters)
             {
-                if (typeContext.genericParameterUsage[genericParameter.Position] == TypeRewriteContext.GenericParameterSpecifics.Relaxed)
+                if (typeContext.genericParameterUsage[genericParameter.Position] == TypeRewriteContext.GenericParameterSpecifics.UsedInFields)
                 {
                     if (!IsValueTypeOnly(typeContext, genericParameter)) return;
                 }
