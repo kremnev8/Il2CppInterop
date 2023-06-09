@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 using Il2CppInterop.Generator.Contexts;
 using Il2CppInterop.Generator.Extensions;
 using Il2CppInterop.Generator.Utils;
@@ -67,7 +65,16 @@ public static class Pass21GenerateValueTypeFields
 
                         // Special case: bools in Il2Cpp are bytes
                         if (newField.FieldType.FullName == "System.Boolean")
-                            newField.MarshalInfo = new MarshalInfo(NativeType.U1);
+                        {
+                            if (typeContext.ComputedTypeSpecifics == TypeRewriteContext.TypeSpecifics.GenericBlittableStruct)
+                            {
+                                newField.FieldType = assemblyContext.Imports.NativeBoolean;
+                            }
+                            else
+                            {
+                                newField.MarshalInfo = new MarshalInfo(NativeType.U1);
+                            }
+                        }
 
                         newType.Fields.Add(newField);
                     }
