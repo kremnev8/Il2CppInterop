@@ -189,7 +189,7 @@ namespace Il2CppInterop.Runtime.Injection
                 return result;
             }
 
-            return GetFileAttributesEx(lpFileName,  fInfoLevelId, lpFileInformation);
+            return GetFileAttributesEx(lpFileName, fInfoLevelId, lpFileInformation);
         }
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
